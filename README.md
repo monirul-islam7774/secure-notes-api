@@ -2,8 +2,9 @@
 
 REST API for a secure note-taking app. Node 20+, Express 5, MongoDB + Mongoose, JWT auth, bcrypt (cost 10), zod validation.
 
-- **Live API:** `<LIVE_API_URL>` (health: `<LIVE_API_URL>/api/health`). Render free tier sleeps when idle; the first request can take 30–50 s.
-- **Frontend repo:** `secure-notes-web`
+- **Live API:** `https://secure-notes-api-s8yy.onrender.com` (health: `https://secure-notes-api-s8yy.onrender.com/api/health`). Render free tier sleeps when idle; the first request can take 30–50 s.
+- **Live frontend:** https://secure-notes-web-seven.vercel.app
+- **Frontend repo:** https://github.com/monirul-islam7774/secure-notes-web
 
 ## Local setup
 
