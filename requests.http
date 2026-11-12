@@ -1,0 +1,110 @@
+@base = http://localhost:5000/api
+@token = paste-token-from-login-response
+@id = paste-an-object-id
+
+### Health
+GET {{base}}/health
+
+### Register
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{ "name": "Carol", "email": "carol@demo.com", "password": "User@123", "interests": ["chess", "hiking"] }
+
+### Login (admin)
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "email": "admin@demo.com", "password": "Admin@123" }
+
+### Login (user)
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "email": "alice@demo.com", "password": "User@123" }
+
+### Me
+GET {{base}}/users/me
+Authorization: Bearer {{token}}
+
+### Update me
+PATCH {{base}}/users/me
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "name": "Alice B", "interests": ["chess", "reading"] }
+
+### List my notes
+GET {{base}}/notes?page=1&limit=10
+Authorization: Bearer {{token}}
+
+### Create note
+POST {{base}}/notes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "title": "New note", "content": "Hello" }
+
+### Get note
+GET {{base}}/notes/{{id}}
+Authorization: Bearer {{token}}
+
+### Update note
+PATCH {{base}}/notes/{{id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "title": "Edited" }
+
+### Delete note
+DELETE {{base}}/notes/{{id}}
+Authorization: Bearer {{token}}
+
+### Posts - list
+GET {{base}}/posts?page=1&limit=10
+Authorization: Bearer {{token}}
+
+### Posts - create
+POST {{base}}/posts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "title": "My post", "body": "Visible to everyone" }
+
+### Scenario 1 - grouped by interest
+GET {{base}}/users/grouped-by-interest?page=1&limit=10
+Authorization: Bearer {{token}}
+
+### Scenario 1 - filtered
+GET {{base}}/users/grouped-by-interest?interest=chess
+Authorization: Bearer {{token}}
+
+### Scenario 2 - posts of a user ($lookup)
+GET {{base}}/users/{{id}}/posts?page=1&limit=10
+Authorization: Bearer {{token}}
+
+### Admin - all notes
+GET {{base}}/admin/notes?page=1&limit=10
+Authorization: Bearer {{token}}
+
+### Admin - list users
+GET {{base}}/admin/users?page=1&limit=10
+Authorization: Bearer {{token}}
+
+### Admin - create user
+POST {{base}}/admin/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "name": "Dave", "email": "dave@demo.com", "password": "User@123", "role": "user", "interests": ["music"] }
+
+### Admin - update user
+PATCH {{base}}/admin/users/{{id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "name": "Renamed", "role": "admin" }
+
+### Admin - delete user
+DELETE {{base}}/admin/users/{{id}}
+Authorization: Bearer {{token}}
