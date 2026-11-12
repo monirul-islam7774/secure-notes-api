@@ -1,0 +1,112 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    env:
+      MONGOMS_DOWNLOAD_DIR: ${{ github.workspace }}/.mongodb-binaries
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # mongodb-memory-server downloads a real mongod once; cache it between runs.
+      - uses: actions/cache@v4
+        with:
+          path: .mongodb-binaries
+          key: mongod-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    name: Deploy to Render
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      API_URL: ${{ vars.API_URL }} # e.g. https://secure-notes-api.onrender.com (no trailing slash)
+    steps:
+      - name: Check deploy configuration
+        id: cfg
+        run: |
+          if [ -z "$RENDER_API_KEY" ] || [ -z "$RENDER_SERVICE_ID" ]; then
+            echo "::warning::RENDER_API_KEY / RENDER_SERVICE_ID not set - skipping deploy."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.enabled == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      # Autoindex is off in production, so indexes are created explicitly, before the new code ships.
+      - name: Sync MongoDB indexes
+        if: steps.cfg.outputs.enabled == 'true' && env.MONGO_URI != ''
+        env:
+          NODE_ENV: production
+          JWT_SECRET: not-used-by-this-script
+        run: |
+          npm ci --omit=dev
+          npm run sync-indexes
+
+      - name: Trigger Render deploy
+        if: steps.cfg.outputs.enabled == 'true'
+        id: deploy
+        run: |
+          resp=$(curl -fsS -X POST "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
+            -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" \
+            -d '{"clearCache":"do_not_clear"}')
+          echo "deploy id: $(echo "$resp" | jq -r .id)"
+          echo "id=$(echo "$resp" | jq -r .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the deploy to go live
+        if: steps.cfg.outputs.enabled == 'true'
+        run: |
+          for i in $(seq 1 60); do
+            status=$(curl -fsS "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys/${{ steps.deploy.outputs.id }}" \
+              -H "Authorization: Bearer $RENDER_API_KEY" | jq -r .status)
+            echo "[$i] status: $status"
+            case "$status" in
+              live) exit 0 ;;
+              build_failed|update_failed|canceled|pre_deploy_failed) echo "::error::Deploy ended with $status"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Timed out waiting for deploy"; exit 1
+
+      - name: Smoke test
+        if: steps.cfg.outputs.enabled == 'true' && env.API_URL != ''
+        run: |
+          # Free instances may still be waking up, so retry.
+          curl -fsS --retry 12 --retry-delay 10 --retry-all-errors --max-time 60 "$API_URL/api/health" | tee /dev/stderr | jq -e '.status == "ok"'
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$API_URL/api/notes")
+          [ "$code" = "401" ] || { echo "::error::Expected 401 on unauthenticated /api/notes, got $code"; exit 1; }
+          echo "Smoke test passed"
